@@ -11,7 +11,9 @@ metadata:
 
 如果任务类型不是明确的二分类文本分类，应先检查数据和用户需求；无法确认时，不要直接套用本 skill，应切换到更合适的 skill 或向用户确认。
 
-## 分块生成与校验规范
+## 分块生成与校验 hook 规范
+
+生成或修改项目代码时，必须按模块分块完成，并在每完成一块后立即调用本 skill 自带的校验 hook 检查该块是否符合对应规范。不要等到全部文件写完后才统一校验；每个 block 都必须先通过自己的 hook，才能继续生成下一个 block。
 
 生成或修改项目代码前，必须先检查当前项目，确认 raw 数据格式、文本列、标签列、需要丢弃的列、标签取值和模型名称。
 
@@ -22,7 +24,7 @@ metadata:
 - `cat` 作为可丢弃列。
 - `差评` / `好评` 作为可读标签名称。
 
-代码必须按模块分块生成：
+可校验的 block 包括：
 
 - `architecture`：项目架构、目录和必要文件。
 - `config`：`src/configuration/config.py`。
@@ -32,19 +34,39 @@ metadata:
 - `predict`：`src/runner/predict.py`。
 - `web`：可选 Web 服务相关文件。
 
-每完成一个 block 后，运行本 skill 自带校验脚本：
+每完成一个 block 后，运行：
 
 ```bash
-python3 scripts/check_binary_project.py --project-root project_root --block block_name
+python scripts/check_project_block.py --project-root project_root --block block_name
 ```
 
-如果一次完成多个 block，可以在全部完成后运行：
+如果环境只有 `python3`，则改用：
 
 ```bash
-python3 scripts/check_binary_project.py --project-root project_root --block all
+python3 scripts/check_project_block.py --project-root project_root --block block_name
 ```
 
-校验脚本只做静态结构和关键规则检查，不替代真实运行测试。校验通过后，仍应执行 Python 语法检查；如果依赖和数据可用，应尽量使用少量样本跑通 `preprocess`、`train`、`evaluate` 和 `predict` 的最小流程。
+如果一次完成多个 block，可以重复传入 `--block`，或在全部完成后运行：
+
+```bash
+python scripts/check_project_block.py --project-root project_root --block all
+```
+
+校验 hook 失败时，不要继续生成后续模块。必须先根据 hook 输出的问题，重新生成或修改当前 block 的代码，然后再次运行同一个 hook，直到该 block 通过检查。
+
+强制执行顺序示例：
+
+1. 完成项目整体架构后，立即运行 `--block architecture`。
+2. `architecture` 通过后，再写 `config.py`，并立即累计运行 `--block architecture --block config`。
+3. `config` 通过后，再写 `preprocess.py`，并立即累计运行 `--block architecture --block config --block preprocess`。
+4. `preprocess` 通过后，再写 `train.py`，并立即累计运行 `--block architecture --block config --block preprocess --block train`。
+5. `train` 通过后，再写 `evaluate.py`，并立即累计运行 `--block architecture --block config --block preprocess --block train --block evaluate`。
+6. `evaluate` 通过后，再写 `predict.py`，并立即累计运行 `--block architecture --block config --block preprocess --block train --block evaluate --block predict`。
+7. 如果生成 Web 服务，最后写 `src/web/`，并立即运行 `--block all`。
+
+也就是说，后续模块的 hook 不只检查当前文件，还要检查前面已经完成的任务是否仍然满足规范。如果累计 hook 失败，应先修复 hook 输出的所有阻断问题；当前累计检查通过后，才能继续写下一个模块。
+
+该 hook 只做静态结构和关键规则检查，不替代真实运行测试。生成完整项目后，仍应执行 Python 语法检查；如果依赖和数据可用，应尽量使用少量样本跑通 `preprocess`、`train`、`evaluate` 和 `predict` 的最小流程。
 
 ## 项目架构规范
 
@@ -263,7 +285,7 @@ python3 src/main.py predict --text "这条评论很好"
 生成或修改完成后，执行：
 
 ```bash
-python3 scripts/check_binary_project.py --project-root project_root --block all
+python scripts/check_project_block.py --project-root project_root --block all
 python3 -m py_compile src/main.py src/process/preprocess.py src/runner/train.py src/runner/evaluate.py src/runner/predict.py
 ```
 
