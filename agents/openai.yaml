@@ -1,0 +1,7 @@
+interface:
+  display_name: "Binary Text Classification Project"
+  short_description: "生成完整二分类文本模型训练工程"
+  default_prompt: "使用 $binary-text-classification-training-project 生成一个完整的二分类文本模型训练工程。"
+
+policy:
+  allow_implicit_invocation: true
